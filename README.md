@@ -1,4 +1,10 @@
-# @sabl/storage-pool 
+<!-- BEGIN:REMOVE_FOR_NPM -->
+[![codecov](https://codecov.io/gh/libsabl/storage-pool-js/branch/main/graph/badge.svg?token=TVL1XYSJHA)](https://app.codecov.io/gh/libsabl/storage-pool-js/branch/main)
+<span class="badge-npmversion"><a href="https://npmjs.org/package/@sabl/storage-pool" title="View this project on NPM"><img src="https://img.shields.io/npm/v/@sabl/storage-pool.svg" alt="NPM version" /></a></span>
+
+<!-- END:REMOVE_FOR_NPM -->
+
+# @sabl/storage-pool
 
 **storage-pool** is a simple, [context](https://github.com/libsabl/patterns/blob/main/patterns/context.md)-aware pattern for describing connection pooling and storage transactions agnostic of the underlying storage type. This same pattern works for relational, document, key-value, graph, and other storage architectures. 
 
