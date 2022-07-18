@@ -33,18 +33,3 @@ export enum StorageKind {
   /** A wide-column store such as Cassandra */
   widecol = 'wide-column',
 }
-
-/**
- * Various isolation levels that storage drivers may support in beginTxn.
- * If a driver does not support a given isolation level an error may be returned.
- */
-export enum IsolationLevel {
-  default = 1,
-  readUncommitted = 2,
-  readCommitted = 3,
-  writeCommitted = 4,
-  repeatableRead = 5,
-  snapshot = 6,
-  serializable = 7,
-  linearizable = 8,
-}

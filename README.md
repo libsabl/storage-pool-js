@@ -6,9 +6,9 @@
 
 # @sabl/storage-pool
 
-**storage-pool** is a simple, [context](https://github.com/libsabl/patterns/blob/main/patterns/context.md)-aware pattern for describing connection pooling and storage transactions agnostic of the underlying storage type. This same pattern works for relational, document, key-value, graph, and other storage architectures. 
+**storage-pool** is a simple, [context](https://github.com/libsabl/patterns/blob/main/patterns/context.md)-aware pattern for describing connection pooling and storage transactions agnostic of the underlying storage type.
 
-Defining these interfaces directly allows authors to write effective business logic that includes basic CRUD actions and even transaction workflows, without depending on a specific storage type, let alone a specific proprietary driver. This is in turn allows concise and testable code while avoiding over-dependence on implementation details of underlying storage choices.
+The interfaces defined in this package set consistent expectations for how storage services should expose basic pool and connection types. They are based on the connection lifecycle APIs in the go standard library [`database/sql` package](https://pkg.go.dev/database/sql).  One minor difference is the that `commit` and `rollback` methods of the `Txn` interface accept a [context](./context.md).
   
 For more detail on the storage-pool pattern, see sabl / [patterns](https://github.com/libsabl/patterns#patterns) / [storage-pool](https://github.com/libsabl/patterns/blob/main/patterns/storage-pool.md).
 
@@ -19,6 +19,122 @@ For more detail on the storage-pool pattern, see sabl / [patterns](https://githu
 
 See [SETUP.md](./docs/SETUP.md), [CONFIG.md](./docs/CONFIG.md).
 <!-- END:REMOVE_FOR_NPM -->
+
+### Compatibility with `@sabl/txn`
+
+This package does **not** depend on [`@sabl/txn`](https://www.npmjs.com/package/@sabl/txn), but the `StorageTxn` type defined here is compatible with the [`Txn` interface](https://github.com/libsabl/txn-js#txn-interface) in `@sabl/txn`, and `StoragePool` and `StorageConn` are compatible with the [`Transactable` interface](https://github.com/libsabl/txn-js#transactable-interface) in `@sabl/txn`.
+
+## API
+
+### StorageAPI
+
+An abstraction of all storage API types, exposing two enumeration properties that provide some clues about the type of the API instance.
+
+```ts
+export interface StorageApi {
+  readonly mode: StorageMode;
+  readonly kind: StorageKind | string;
+}
+```
+
+#### StorageMode
+
+Represents the basic type of the API instance: pool, connection, or transaction.
+
+```ts
+export enum StorageMode {
+  pool = 1,
+  conn = 2,
+  txn = 3,
+}
+```
+
+#### StorageKind
+
+Extensible string enumeration describing the basic underlying storage type, such as relational, document, graph, etc. Authors may use their own values not defined here.
+
+```ts
+export enum StorageKind {
+  unknown = 'unknown',
+  rdb = 'relational',
+  doc = 'document',
+  graph = 'graph',
+  keyval = 'key-value',
+  widecol = 'wide-column',
+}
+```
+
+### StoragePool
+
+```ts
+interface StoragePool extends StorageApi { 
+  conn(ctx: IContext): Promise<StorageConn>; 
+  beginTxn(ctx: IContext, opts?: TxnOptions): Promise<StorageTxn>;
+  close(): Promise<void>;
+}
+```
+
+A pool of storage connections.
+
+Implementations of `StoragePool` should return `StorageMode.pool` for their `mode` property.
+
+#### `conn`
+Retrieves a connection from the pool. The context provided may be cancelable, and if the context is canceled before a connection becomes available then `conn` should throw an exception. The resolved connection should already be open.
+
+**If ctx is canceled**: Any ongoing operations on the connection returned from `conn` are immediately aborted, and the connection is closed and returned to the pool.
+
+#### `beginTxn`
+Begins a transaction on a transient connection that will be returned to the pool when the transaction completes. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.|
+
+**If ctx is canceled**: Any ongoing operations on the transaction returned from `beginTxn` are immediately aborted, the transaction is rolled back, and the underlying connection is closed and returned to the pool 
+
+#### `close`
+Closes the entire pool. Pools are meant to be long-lived and concurrent-safe, so this is generally only used on graceful program termination. Should resolve when all connections have been gracefully terminated. 
+
+### StorageConn
+
+```ts
+export interface StorageConn extends StorageApi {
+  beginTxn(ctx: IContext, opts?: unknown): Promise<StorageTxn>;
+  close(): Promise<void>;
+}
+```
+
+An open connection to a storage provided. Maintains session state such as variables, temporary tables, and transactions. Users of a connection are expected to ensure the connection is closed when they are done with it.
+
+Implementations of `StorageConn` should return `StorageMode.conn` for their `mode` property.
+
+#### `beginTxn`
+Begins a transaction on the connection. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.
+
+**If ctx is canceled**: Any ongoing operations on the transaction returned from `beginTxn` are immediately aborted and the transaction is rolled back, but the connection itself remains open. 
+
+#### `close`
+Closes the connection, waiting for all ongoing operations and transactions to complete. If the connection was obtained from a pool, this should release the connection back to the pool rather than terminating the underlying connection.
+
+
+### StorageTxn
+
+```ts
+interface StorageTxn extends StorageApi {
+  commit(ctx: IContext): Promise<void>;
+  rollback(ctx: IContext): Promise<void>;
+}
+```
+
+An active storage transaction. 
+
+Implementations of `StorageTxn` should return `StorageMode.txn` for their `mode` property.
+
+#### `commit`
+Commits and closes the transaction. 
+
+**If ctx is canceled**: The commit is immediately aborted, if possible, and instead the transaction is rolled back. 
+
+#### `rollback`
+Rolls back and closes the transaction.
+
+**If ctx is canceled**: Nothing happens, as the transaction is already rolling back. ctx is still provided for state and dependency injection.
 
 ## Concepts
  
@@ -86,124 +202,3 @@ export interface StackPool extends StackApi, StackTransactable {
   close(): Promise<void>;
 }
 ```
-
-## API
-
-### StorageAPI
-
-An abstraction of all storage API types, exposing two enumeration properties that provide some clues about the type of the API instance.
-
-```ts
-export interface StorageApi {
-  readonly mode: StorageMode;
-  readonly kind: StorageKind | string;
-}
-```
-
-#### StorageMode
-
-Represents the basic type of the API instance: pool, connection, or transaction.
-
-```ts
-export enum StorageMode {
-  pool = 1,
-  conn = 2,
-  txn = 3,
-}
-```
-
-#### StorageKind
-
-Extensible string enumeration describing the basic underlying storage type, such as relational, document, graph, etc. Authors may use their own values not defined here.
-
-```ts
-export enum StorageKind {
-  unknown = 'unknown',
-  rdb = 'relational',
-  doc = 'document',
-  graph = 'graph',
-  keyval = 'key-value',
-  widecol = 'wide-column',
-}
-```
-
-### StoragePool
-
-A pool of storage connections.
-
-|method|description|
-|-|-|
-|`conn`|Retrieves a connection from the pool. The context provided may be cancelable, and if the context is canceled before a connection becomes available then `conn` should throw an exception. The resolved connection should already be open.|
-|`beginTxn`|Begins a transaction on a transient connection that will be returned to the pool when the transaction completes. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.|
-|`close`|Closes the entire pool. Pools are meant to be long-lived and concurrent-safe, so this is generally only used on graceful program termination. Should resolve when all connections have been gracefully terminated.|
-
-```ts
-interface StoragePool extends StorageApi { 
-  conn(ctx: IContext): Promise<StorageConn>; 
-  beginTxn(ctx: IContext, opts?: TxnOptions): Promise<StorageTxn>;
-  close(): Promise<void>;
-}
-```
-
-### StorageConn
-
-An open connection to a storage provided. Maintains session state such as variables, temporary tables, and transactions. Users of a connection are expected to ensure the connection is closed when they are done with it.
-
-|method|description|
-|-|-| 
-|`beginTxn`|Begins a transaction on the connection. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.|
-|`close`|Closes the connection. If the connection was obtained from a pool, this should release the connection back to the pool rather than terminating the underlying connection.|
-
-```ts
-export interface StorageConn extends StorageApi {
-  beginTxn(ctx: IContext, opts?: TxnOptions): Promise<StorageTxn>;
-  close(): Promise<void>;
-}
-```
-
-### StorageTxn
-
-An active storage transaction.
-
-|method|description|
-|-|-| 
-|`commit`|Commits and closes the transaction.|
-|`close`|Rolls back and closes the transaction.|
-
-```ts
-interface StorageTxn extends StorageApi {
-  commit(): Promise<void>;
-  rollback(): Promise<void>;
-}
-```
-
-### TxnOptions, IsolationLevel
-
-The `beginTxn` methods on `StorageConn` and `StoragePool` also accept an options object:
-
-```ts
-interface TxnOptions {
-  readonly isolationLevel?: IsolationLevel;
-  readonly readOnly?: boolean;
-}
-```
-
-`readOnly` indicates the transaction should be executed in a read-only mode if the target storage service supports it.
-
-`isolationLevel` describes known [**isolation levels**](https://en.wikipedia.org/wiki/Isolation_(database_systems)#Isolation_levels) which may or may not be supported by an underlying storage driver. If an unsupported isolation level is requested, implementation authors may choose to ignore it or throw an exception.
-
-### withStorageApi, getStorageApi
-
-This is a [context getter/setter pair](https://github.com/libsabl/patterns/blob/main/patterns/context.md#getter--setter-pattern) that adds or retrieves an `StorageApi` instance. It is used in [`runTransaction`](#runtransaction) to implement a canonical transaction workflow that is completely agnostic of underlying storage type.
-
-### runTransaction
-
-`runTransaction` accepts an existing context and an async callback to be run within the context of a transaction. It implements a canonical storage transaction workflow that automatically commits or rolls back:
-
-- If the callback resolves successfully, then the transaction's `commit` method is called
-- If the callback rejects, then the transaction's `rollback` method is called before passing the inner exception up the call stack.
-- If the current storage API on the provided context is already a transaction, then the callback is invoked with the existing context and transaction. 
-
-**NOTE**: This implementation reflects a pattern where true nested transactions are not supported. Authors are free to create their own implementations that do support truly nested transactions where inner transactions are committed or rejected independently of an outer transaction. This could be implemented for some relational databases using [transaction savepoints](https://en.wikipedia.org/wiki/Savepoint).
-
-For a complete illustration of the usage and expected behavior of `runTransaction`, see the [tests themselves](https://github.com/libsabl/storage-pool-js/blob/main/test/context.spec.ts).

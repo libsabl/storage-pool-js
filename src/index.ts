@@ -3,16 +3,9 @@
 // license that can be found in the LICENSE file.
 
 import { IContext } from '@sabl/context';
-import { IsolationLevel, StorageKind, StorageMode } from './enums';
+import { StorageKind, StorageMode } from './enums';
 
-export { IsolationLevel, StorageKind, StorageMode };
-export { getStorageApi, withStorageApi, runTransaction } from './context';
-
-/** Options to be used in beginTxn */
-export interface TxnOptions {
-  readonly isolationLevel?: IsolationLevel;
-  readonly readOnly?: boolean;
-}
+export { StorageKind, StorageMode };
 
 /**
  * An abstract representation of a storage API, which
@@ -30,10 +23,10 @@ export interface StorageApi {
  */
 export interface StorageTxn extends StorageApi {
   /** Commit all pending operations */
-  commit(): Promise<void>;
+  commit(ctx: IContext): Promise<void>;
 
   /** Rollback all pending operations. */
-  rollback(): Promise<void>;
+  rollback(ctx: IContext): Promise<void>;
 }
 
 /**
@@ -42,7 +35,7 @@ export interface StorageTxn extends StorageApi {
  */
 export interface Transactable extends StorageApi {
   /** Begin a transaction on the connection or pool */
-  beginTxn(ctx: IContext, opts?: TxnOptions): Promise<StorageTxn>;
+  beginTxn(ctx: IContext, opts?: unknown): Promise<StorageTxn>;
 }
 
 /**
