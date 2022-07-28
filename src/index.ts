@@ -23,10 +23,10 @@ export interface StorageApi {
  */
 export interface StorageTxn extends StorageApi {
   /** Commit all pending operations */
-  commit(ctx: IContext): Promise<void>;
+  commit(): Promise<void>;
 
   /** Rollback all pending operations. */
-  rollback(ctx: IContext): Promise<void>;
+  rollback(): Promise<void>;
 }
 
 /**

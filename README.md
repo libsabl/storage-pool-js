@@ -79,14 +79,14 @@ A pool of storage connections.
 Implementations of `StoragePool` should return `StorageMode.pool` for their `mode` property.
 
 #### `conn`
-Retrieves a connection from the pool. The context provided may be cancelable, and if the context is canceled before a connection becomes available then `conn` should throw an exception. The resolved connection should already be open.
+Retrieves a connection from the pool. The context provided may be cancelable, and if the context is canceled before a connection becomes available then `conn` should throw an exception. The resolved connection should already be open and ready for use.
 
-**If ctx is canceled**: Any ongoing operations on the connection returned from `conn` are immediately aborted, and the connection is closed and returned to the pool.
+**If ctx is canceled**: If a connection has already been returned, nothing happens. The cancellation applies only to the request to obtain a connection.
 
 #### `beginTxn`
-Begins a transaction on a transient connection that will be returned to the pool when the transaction completes. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.|
+Begins a transaction on a transient connection that will be returned to the pool when the transaction completes. Implementers should respect a cancelable context and rollback the transaction if the context is canceled before the transaction is committed.
 
-**If ctx is canceled**: Any ongoing operations on the transaction returned from `beginTxn` are immediately aborted, the transaction is rolled back, and the underlying connection is closed and returned to the pool 
+**If ctx is canceled**: Any ongoing operations on the transaction returned from `beginTxn` are immediately aborted, the transaction is rolled back, and the underlying connection is closed and returned to the pool.
 
 #### `close`
 Closes the entire pool. Pools are meant to be long-lived and concurrent-safe, so this is generally only used on graceful program termination. Should resolve when all connections have been gracefully terminated. 
@@ -100,7 +100,7 @@ export interface StorageConn extends StorageApi {
 }
 ```
 
-An open connection to a storage provided. Maintains session state such as variables, temporary tables, and transactions. Users of a connection are expected to ensure the connection is closed when they are done with it.
+An open connection to a storage provider. Maintains session state such as variables, temporary tables, and transactions. Users of a connection are expected to ensure the connection is closed when they are done with it.
 
 Implementations of `StorageConn` should return `StorageMode.conn` for their `mode` property.
 
@@ -117,8 +117,8 @@ Closes the connection, waiting for all ongoing operations and transactions to co
 
 ```ts
 interface StorageTxn extends StorageApi {
-  commit(ctx: IContext): Promise<void>;
-  rollback(ctx: IContext): Promise<void>;
+  commit(): Promise<void>;
+  rollback(): Promise<void>;
 }
 ```
 
@@ -127,14 +127,10 @@ An active storage transaction.
 Implementations of `StorageTxn` should return `StorageMode.txn` for their `mode` property.
 
 #### `commit`
-Commits and closes the transaction. 
-
-**If ctx is canceled**: The commit is immediately aborted, if possible, and instead the transaction is rolled back. 
+Commits and closes the transaction.  
 
 #### `rollback`
 Rolls back and closes the transaction.
-
-**If ctx is canceled**: Nothing happens, as the transaction is already rolling back. ctx is still provided for state and dependency injection.
 
 ## Concepts
  
